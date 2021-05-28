@@ -1,4 +1,7 @@
 ﻿using ExcelDataReader;
+using NPOI.HSSF.UserModel;
+using NPOI.SS.UserModel;
+using NPOI.XSSF.UserModel;
 using System;
 using System.IO;
 
@@ -24,35 +27,69 @@ namespace ExcelSearcher
             fileAPath = Console.ReadLine();
             Console.WriteLine("File Main With the many rows: ");
             fileBPath = Console.ReadLine();
-            using (var fileAStream = File.Open(fileAPath, FileMode.Open, FileAccess.Read))
+            IWorkbook fileAWorkBook;
+            using (var fileAStream = new FileStream(fileAPath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
             {
-                using (var fileAReader = ExcelReaderFactory.CreateReader(fileAStream))
+                try
                 {
-                    do
+                    // Try to read workbook as XLSX:
+                    try
                     {
-                        if(fileAReader.Name == fileATargetSheetName)
-                        {
-                            int rowIndex = 0;
-                            while (fileAReader.Read())
-                            {
-                                var query1 = fileAReader.GetValue(fileAQueryColumnIndex).ToString();
-                                var query2Obj = fileAReader.GetValue(fileAQuery2ColumnIndex);
-                                var query2 = query2Obj.ToString();
-                                var result = ReturnValueByQuery(query1, query2);
-                                if(result == null)
-                                {
-                                    Console.WriteLine("Not found for - " + query1 + " and " + query2);
-                                } else
-                                {
-                                    Console.WriteLine("Result of searched value - " + query1 + " and " + query2 + " : " + result);
-                                }
+                        fileAWorkBook = new XSSFWorkbook(fileAStream);
+                    }
+                    catch
+                    {
+                        fileAWorkBook = null;
+                    }
 
-                                rowIndex++;
-                            }
-                        }
-                    } while (fileAReader.NextResult());
+                    // If reading fails, try to read workbook as XLS:
+                    if (fileAWorkBook == null)
+                    {
+                        fileAWorkBook = new HSSFWorkbook(fileAStream);
+                    }
                 }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Excel read error!");
+                    return;
+                }
+
+                var targetSheet = fileAWorkBook.GetSheet(fileATargetSheetName);
+                int rowIndex = 0;
+                foreach(IRow row in targetSheet)
+                {
+                    var query1Cell = row.GetCell(fileAQueryColumnIndex);
+                    var query2Cell = row.GetCell(fileAQuery2ColumnIndex);
+                    var query1 = query1Cell.StringCellValue;
+                    var query2 = query2Cell.StringCellValue;
+                    var result = ReturnValueByQuery(query1, query2);
+                    if (result == null)
+                    {
+                        Console.WriteLine("Not found for - " + query1 + " and " + query2);
+                    }
+                    else
+                    {
+                        WriteResult(fileAWorkBook, result, rowIndex);
+                        Console.WriteLine("Result of searched value - " + query1 + " and " + query2 + " : " + result);
+                    }
+
+                    rowIndex++;
+                } 
             }
+
+            using (var fileAStream = new FileStream(fileAPath, FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite))
+            {
+                fileAWorkBook.Write(fileAStream);
+            }
+        }
+
+        public static void WriteResult(IWorkbook workBook, string result, int rowIndex)
+        {
+
+            var targetSheet = workBook.GetSheet(fileATargetSheetName);
+            var targetRow = targetSheet.GetRow(rowIndex);
+            var targetCell = targetRow.CreateCell(fileAResultPopulateColumnIndex, CellType.String);
+            targetCell.SetCellValue(result);
         }
 
         public static string ReturnValueByQuery(string query1, string query2)
